@@ -90,6 +90,12 @@ These aren't afterthoughts — they're experiences that make the product whole o
 
 **The app should feel like a darkroom, not a dashboard.** Birders are visual people dealing with visual content. The UI should be dark, photo-centric, immersive. Photos are large. Controls are minimal and contextual. No widgets, no cards, no dashboards. When you're reviewing your shots, the photos are the experience.
 
+**Offline-first.** The entire core loop — import, triage, quality scoring, dedup, review, edit, export — works without internet. Birders process photos at cabins, on road trips, in places with no signal. Only cloud species ID (Tier 2/3) and content generation need network. When offline, local species ID gives its best guess and queues uncertain photos for cloud identification when connectivity returns.
+
+**Reference, don't copy.** Our users have terabytes of RAW files. We never copy photos into the app's library — we reference them in place and cache thumbnails + metadata in SwiftData. If a file moves or disappears, we surface it clearly so the birder can re-link. This is the Lightroom catalog model, and birders already understand it.
+
+**Respect location privacy.** Bird photos contain GPS coordinates. Some birders fiercely protect locations of rare nesting sites. Before any photo leaves the device for cloud AI, we strip GPS metadata. We make it visible and explicit when a photo is being sent to the cloud ("Send to AI for identification?"). There's always a local-only mode that never phones home.
+
 **Speed is a feature.** The entire point is saving time. If AI triage takes 20 minutes for 400 photos, we've failed. Target: under 3 minutes from import to curated gallery for a typical session. This means aggressive parallelization, progressive loading, background processing with live updates.
 
 **Respect the birder's expertise.** The AI suggests, the birder decides. Never auto-delete. Never hide photos without a way to see them. Always show confidence levels. Always allow corrections. The birder knows more about birds than the AI does — our job is to narrow their workload, not override their judgment.
