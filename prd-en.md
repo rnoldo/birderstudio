@@ -143,10 +143,111 @@ No one is doing what we're doing. That's not arrogance — it's the gap:
 
 We sit in the middle of all of these. The workflow bridge between camera and community that none of them provide.
 
+## AI Technical Strategy
+
+We don't need large models for most of the heavy lifting. Research shows all three core AI tasks can run primarily on-device, with cloud AI reserved for the genuinely hard cases.
+
+### Bird Species Identification — Tiered Pipeline
+
+The single most important architectural decision: **use eBird's location + date frequency data as a Bayesian prior**. For a photo taken at a specific GPS coordinate in a specific month, eBird tells us which species have been reported there and how frequently. This narrows ~10,000 worldwide species down to ~100-150 local candidates. It transforms a mediocre classifier into a great one. This is what makes Merlin so accurate — and the data is freely available via eBird's API.
+
+**Tier 1 — On-device Core ML (free, instant, handles ~50-65% of photos)**
+- EfficientNet-B2 or B4 fine-tuned on the iNaturalist bird subset (~900+ species for North America)
+- Convert to Core ML (~7-15 MB model), runs in ~10-20ms per photo on Apple Silicon
+- Combined with eBird location+date prior: if top-1 confidence > 85% AND species is expected at this location/date → accept
+- Training data: iNaturalist competition datasets (publicly available, millions of bird images)
+
+**Tier 2 — Cloud specialized model (cheap, handles ~20-30% of photos)**
+- For uncertain cases (confidence 50-85%, or species unexpected at location)
+- Self-hosted model on Replicate or similar: a larger ViT or ensemble model with location priors
+- Cost: < $0.005 per image
+
+**Tier 3 — Claude Vision (expensive, handles ~10-20% of photos)**
+- For genuinely difficult cases: confidence < 50%, rare species, juveniles, heavily backlit/distant
+- Also used when the user explicitly requests a second opinion
+- Cost: ~$0.02-0.04 per image
+
+**Estimated cost per 400-photo session: $0.60-3.00** (vs. $4-20 if everything went to Claude Vision)
+
+No open-source model currently covers all ~10,000 eBird species at production quality. Best available: ViT fine-tuned on CUB-200 (200 species, ~90% top-1) and various EfficientNet models on NABirds (555 species). For North America coverage (~900-1,000 species), we'll need to fine-tune on iNaturalist data. The model will be weakest on: difficult species pairs (Cooper's vs Sharp-shinned Hawk), juveniles in non-standard plumage, and rare species with few training photos. These are exactly the cases that fall through to Tier 2/3.
+
+### Photo Quality Scoring — Fully On-Device
+
+No cloud calls needed. Total cost: $0. Total latency: ~50-80ms per photo.
+
+```
+Photo
+  ├─→ [Apple Vision: Subject Segmentation] → bird mask + background mask
+  ├─→ [YOLOv8-nano Core ML: Bird Detection] → bounding box (~15ms, ~6MB model)
+  ├─→ [NIMA MobileNetV2 Core ML] → aesthetic score 1-10 (~10ms, ~14MB model)
+  ├─→ [Laplacian variance on bird ROI] → sharpness score (<2ms)
+  ├─→ [Head crop + Laplacian] → eye sharpness proxy (<2ms)
+  ├─→ [CIAreaHistogram] → exposure score (<2ms)
+  ├─→ [Saliency + rule-of-thirds geometry] → composition score (~20ms)
+  ├─→ [Background mask + frequency analysis] → background quality (<5ms)
+  └─→ Weighted combination → final quality rank
+```
+
+Key models:
+- **NIMA** (Neural Image Assessment, MobileNetV2 backbone): predicts aesthetic score distribution. Well-studied, converts cleanly to Core ML. SRCC ~0.88 on standard benchmarks.
+- **YOLOv8-nano**: for bird detection/bounding box. Pre-trained bird detectors exist on NABirds/CUB-200 datasets. ~6MB model.
+- **Traditional CV** handles sharpness (Laplacian), exposure (histogram), and background quality (frequency analysis) with no ML overhead at all.
+
+Bird-specific quality signals that matter:
+- **Eye sharpness** — the most important criterion in bird photography. Detect bird → crop head region (upper 30% of bounding box) → Laplacian variance on that crop. Simple but effective.
+- **Background quality** — segment bird from background using Apple's VNGenerateForegroundInstanceMask (macOS 14+), analyze background region's frequency content. Low variance = smooth bokeh = good.
+- **Subject prominence** — ratio of bird bounding box to total frame area. Larger bird in frame = better.
+
+### Duplicate Detection & Burst Grouping — Fully On-Device
+
+No cloud calls needed. Total cost: $0. Total time for 500 photos: ~15-30 seconds.
+
+**Stage 1: EXIF timestamp clustering (< 1ms)**
+Sort by capture time. Photos within 2-3 seconds = likely burst. This alone catches most mechanical bursts and is essentially free.
+
+**Stage 2: Visual fingerprinting with Apple VNFeaturePrint (5-15 sec)**
+Apple's built-in `VNGenerateImageFeaturePrintRequest` produces a compact embedding per image. Compare via `computeDistance(to:)`. Thresholds:
+- Distance < 5.0: near-identical (true duplicate / same burst frame)
+- Distance 5.0-15.0: same scene, minor differences
+- Distance 15.0-25.0: similar content (same subject, different shot)
+- Distance > 25.0: unrelated
+
+Feature prints are cacheable — compute once, store alongside the image, never recompute.
+
+**Stage 3: pHash as complementary fast filter (2-4 sec)**
+Perceptual hashing (DCT-based) catches exact and near-exact duplicates. Hamming distance 0-2 = true duplicate, 3-8 = same burst. Good for catching RAW vs JPEG of the same shot.
+
+**Stage 4: Hierarchical clustering on VNFeaturePrint distances (< 100ms)**
+Agglomerative clustering produces a dendrogram — cut at different thresholds to get "tight burst" vs "same encounter" vs "same session" groupings. For 500 photos the distance matrix is only 250K entries, trivial to compute.
+
+**Stage 5: Best-of-burst selection (6-12 sec for all bursts)**
+Within each burst cluster, score and rank:
+- Sharpness on subject region (40% weight) — Laplacian variance on saliency crop
+- Exposure quality (20%) — histogram analysis, penalize highlight/shadow clipping
+- Subject size in frame (20%) — saliency region area relative to frame
+- Composition (10%) — subject centroid distance from rule-of-thirds intersections
+- Noise level (10%) — variance in smooth background regions
+
+Present the top pick highlighted, runner-up accessible, rest dimmed.
+
+### Total On-Device AI Budget
+
+| Component | Model Size | Latency per Photo |
+|-----------|-----------|-------------------|
+| EfficientNet-B2 (species ID) | ~7-15 MB | ~10-20ms |
+| NIMA MobileNetV2 (aesthetic score) | ~14 MB | ~10ms |
+| YOLOv8-nano (bird detection) | ~6 MB | ~15ms |
+| VNFeaturePrint (duplicate detection) | 0 (system) | ~15-30ms |
+| Traditional CV (sharpness, exposure, etc.) | 0 | ~5-10ms |
+| **Total** | **~30-35 MB** | **~55-85ms** |
+
+For a 400-photo session, the full pipeline (triage + quality scoring + duplicate detection + burst selection) should complete in **under 60 seconds** on Apple Silicon. The user drops their photos in, goes to make coffee, and comes back to a curated gallery. Only species identification on uncertain photos touches the network.
+
 ## Open Questions We Need to Answer by Building
 
-- What's the real-world accuracy of cloud vision models on bird species ID from field photos (not clean stock images, but backlit, partially obscured, distant shots)?
+- What's the real-world accuracy of our tiered species ID pipeline on actual field photos (backlit, partially obscured, distant shots)? Lab benchmarks won't tell us this — we need to test on real birding sessions.
+- How well does VNFeaturePrint handle bird-specific similarity? It's a general-purpose embedding — it might confuse two different birds on similar perches, or split a burst where the bird dramatically changes pose.
 - What's the right UX for uncertain IDs? How do we present confidence without overwhelming?
-- How much EXIF/GPS data can we practically use for species narrowing? (If GPS says "Minnesota in January", it's probably not a Painted Bunting.)
-- What RAW formats does Core Image handle natively, and which need additional work?
-- How do birders actually want to interact with AI-generated content? Full drafts to edit, or sentence fragments to assemble?
+- What's the optimal eBird frequency threshold for the location prior? Too aggressive and we miss genuine rarities. Too loose and we don't help enough.
+- What RAW formats does Core Image handle natively, and which need additional codecs?
+- How do birders actually want to interact with AI-generated content? Full drafts to edit, or fragments to assemble?
