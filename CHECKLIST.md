@@ -67,15 +67,15 @@
 **目标：** 用户能把一批 RAW 拖进来，看到照片网格（60fps）。
 
 ### 2.1 Import Service
-- [ ] `ImportService` actor
-- [ ] Security-scoped bookmark 生成 + 持久化 + 失效处理
-- [ ] TaskGroup 并行导入
-- [ ] Checksum 去重（first-1MB SHA-256 + size + mtime）
-- [ ] EXIF 提取（ImageIO metadata）
-- [ ] 缩略图生成（256px HEIC via CGImageSource）
-- [ ] 预览图生成（1200px HEIC）
-- [ ] Import 进度 AsyncStream
-- [ ] 单元测试：固定 RAW 样本
+- [x] `ImportService` (Sendable final class, TaskGroup with bounded concurrency)
+- [x] Security-scoped bookmark 生成 + 解析 + stale 处理 (`BookmarkStore`)
+- [x] TaskGroup 并行导入（maxConcurrency = CPU 核数，默认 4 起）
+- [x] Checksum 去重（first-1MB SHA-256 + file size，通过 `PhotoRepository.findByChecksum`）
+- [x] EXIF 提取（`EXIFExtractor`：ImageIO metadata, 兼容 CR3 `ISOSpeed`）
+- [x] 缩略图生成（256px HEIC via CGImageSource, embedded-first）
+- [x] 预览图生成（1200px HEIC）
+- [x] Import 进度 AsyncStream（`ImportEvent`）
+- [x] 单元测试：真实 23 CR3 样本（benchmark: 0.82s / 36ms per photo）
 
 ### 2.2 App Shell + Xcode 工程
 - [ ] Xcode 工程（Bruce 本地创建）或 xcodegen 配置
