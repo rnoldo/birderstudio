@@ -1,0 +1,54 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+
+# Stray compile artifacts if they leak into root
+/*.d
+/*.o
+/*.swiftdeps
+/*.swiftdeps~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+.vscode/
+.idea/
+
+# Logs and crash reports
+*.log
+crash.log
+
+# Test artifacts
+*.xctestrun
+coverage/
+*.gcno
+*.gcda
+
+# Models (按需下载，不入 git)
+models/*.mlmodel
+models/*.mlmodelc
+Resources/Models/
+
+# Fonts (外购，按需添加；不含源字体文件)
+Resources/Fonts/*.otf
+Resources/Fonts/*.ttf
+!Resources/Fonts/.gitkeep
