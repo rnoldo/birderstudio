@@ -58,7 +58,7 @@
 ### 1.7 Stage 1 验收
 - [x] `swift build` 通过
 - [x] `swift test` 全绿
-- [ ] git commit: "Stage 1: foundation + data layer"
+- [x] git commit: "Stage 1: foundation + data layer"
 
 ---
 
