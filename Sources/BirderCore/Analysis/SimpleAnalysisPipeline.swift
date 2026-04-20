@@ -14,29 +14,18 @@ import Vision
 /// Session percentile is left as 0.5 per-photo; `AnalysisService` recomputes it
 /// after a batch finishes so the score is library-relative.
 public struct SimpleAnalysisPipeline: AnalysisPipeline {
-    public init() {}
+    /// Max pixel dimension requested from ImageIO. Large enough that 512-px
+    /// Laplacian and 299-px Vision feature print have headroom, small enough
+    /// that ImageIO returns the embedded preview for RAW files instead of
+    /// demosaicing the sensor data through RawCamera.
+    private static let analysisPixelSize = 2048
 
-    // Apple's RawCamera framework deadlocks under concurrent RAW decoding
-    // (the dispatch_barrier_sync inside IIOImageProviderInfo wedges when
-    // hit from multiple threads). Serialize the decode-triggering calls
-    // — CGContext.draw and VNImageRequestHandler.perform — behind a
-    // process-global lock. CPU-side scoring stays parallel.
-    private static let decodeLock = NSLock()
+    public init() {}
 
     public func analyze(photoID: UUID, imageURL: URL) throws -> PhotoAnalysis {
         let cgImage = try Self.loadCGImage(url: imageURL)
-
-        Self.decodeLock.lock()
-        let gray: GrayBuffer
-        let featurePrint: Data
-        do {
-            gray = try Self.makeGrayBuffer(cgImage: cgImage, maxDim: 512)
-            featurePrint = try Self.featurePrint(cgImage: cgImage)
-            Self.decodeLock.unlock()
-        } catch {
-            Self.decodeLock.unlock()
-            throw error
-        }
+        let gray = try Self.makeGrayBuffer(cgImage: cgImage, maxDim: 512)
+        let featurePrint = try Self.featurePrint(cgImage: cgImage)
 
         let sharpness = Self.laplacianVarianceScore(gray: gray)
         let exposure = Self.exposureScore(gray: gray)
@@ -62,9 +51,30 @@ public struct SimpleAnalysisPipeline: AnalysisPipeline {
 
     // MARK: - Image loading
 
+    /// Loads an image suitable for analysis.
+    ///
+    /// Prefers the embedded preview JPEG over full RAW demosaic:
+    /// - RAW files (CR3/NEF/ARW/…) always ship a 2–3k camera-rendered JPEG;
+    ///   ImageIO returns that directly instead of going through RawCamera,
+    ///   which is ~10× slower and has XPC hangs under concurrent load.
+    /// - Non-RAW formats fall through to the standard path.
+    ///
+    /// All downstream analysis downscales aggressively (512-px gray for
+    /// Laplacian, 299-px for Vision feature print), so the preview carries
+    /// plenty of resolution.
     private static func loadCGImage(url: URL) throws -> CGImage {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            throw AnalysisError.imageLoadFailed(url)
+        }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceThumbnailMaxPixelSize: analysisPixelSize,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        if let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) {
+            return cg
+        }
+        guard let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
             throw AnalysisError.imageLoadFailed(url)
         }
         return cg
