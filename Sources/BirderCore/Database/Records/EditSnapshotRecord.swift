@@ -45,8 +45,8 @@ extension EditSnapshotRecord {
         self.photoId = domain.photoID.uuidString
         self.editJson = json
         self.name = domain.name
-        self.createdAt = domain.createdAt.timeIntervalSince1970
-        self.updatedAt = domain.updatedAt.timeIntervalSince1970
+        self.createdAt = domain.createdAt.timeIntervalSinceReferenceDate
+        self.updatedAt = domain.updatedAt.timeIntervalSinceReferenceDate
         self.isCurrent = domain.isCurrent ? 1 : 0
     }
 
@@ -66,8 +66,8 @@ extension EditSnapshotRecord {
             photoID: photoUUID,
             graph: graph,
             name: name,
-            createdAt: Date(timeIntervalSince1970: createdAt),
-            updatedAt: Date(timeIntervalSince1970: updatedAt),
+            createdAt: Date(timeIntervalSinceReferenceDate: createdAt),
+            updatedAt: Date(timeIntervalSinceReferenceDate: updatedAt),
             isCurrent: isCurrent != 0
         )
     }

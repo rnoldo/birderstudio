@@ -19,7 +19,7 @@ extension ProjectRecord {
     init(from domain: Project) {
         self.id = domain.id.uuidString
         self.name = domain.name
-        self.createdAt = domain.createdAt.timeIntervalSince1970
+        self.createdAt = domain.createdAt.timeIntervalSinceReferenceDate
     }
 
     func toDomain() throws -> Project {
@@ -29,7 +29,7 @@ extension ProjectRecord {
         return Project(
             id: uuid,
             name: name,
-            createdAt: Date(timeIntervalSince1970: createdAt)
+            createdAt: Date(timeIntervalSinceReferenceDate: createdAt)
         )
     }
 }

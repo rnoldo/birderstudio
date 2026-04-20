@@ -56,7 +56,7 @@ public struct PhotoRepository: Sendable {
             guard var r = record else { return }
             r.status = status.rawValue
             if let date = analyzedAt {
-                r.analyzedAt = date.timeIntervalSince1970
+                r.analyzedAt = date.timeIntervalSinceReferenceDate
             }
             try r.update(db)
             record = r

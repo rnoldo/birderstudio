@@ -28,7 +28,7 @@ extension PhotoRatingRecord {
         self.star = domain.star
         self.colorLabel = domain.colorLabel
         self.note = domain.note
-        self.ratedAt = domain.ratedAt.timeIntervalSince1970
+        self.ratedAt = domain.ratedAt.timeIntervalSinceReferenceDate
     }
 
     func toDomain() throws -> PhotoRating {
@@ -42,7 +42,7 @@ extension PhotoRatingRecord {
             star: star,
             colorLabel: colorLabel,
             note: note,
-            ratedAt: Date(timeIntervalSince1970: ratedAt)
+            ratedAt: Date(timeIntervalSinceReferenceDate: ratedAt)
         )
     }
 }

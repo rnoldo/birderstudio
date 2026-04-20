@@ -36,9 +36,9 @@ extension SessionRecord {
         self.locationName = domain.locationName
         self.locationLat = domain.locationCoordinate?.latitude
         self.locationLon = domain.locationCoordinate?.longitude
-        self.dateStart = domain.dateStart.timeIntervalSince1970
-        self.dateEnd = domain.dateEnd.timeIntervalSince1970
-        self.createdAt = domain.createdAt.timeIntervalSince1970
+        self.dateStart = domain.dateStart.timeIntervalSinceReferenceDate
+        self.dateEnd = domain.dateEnd.timeIntervalSinceReferenceDate
+        self.createdAt = domain.createdAt.timeIntervalSinceReferenceDate
         self.colorHex = domain.colorHex
         self.iconName = domain.iconName
     }
@@ -56,9 +56,9 @@ extension SessionRecord {
             name: name,
             locationName: locationName,
             locationCoordinate: coordinate,
-            dateStart: Date(timeIntervalSince1970: dateStart),
-            dateEnd: Date(timeIntervalSince1970: dateEnd),
-            createdAt: Date(timeIntervalSince1970: createdAt),
+            dateStart: Date(timeIntervalSinceReferenceDate: dateStart),
+            dateEnd: Date(timeIntervalSinceReferenceDate: dateEnd),
+            createdAt: Date(timeIntervalSinceReferenceDate: createdAt),
             colorHex: colorHex,
             iconName: iconName
         )

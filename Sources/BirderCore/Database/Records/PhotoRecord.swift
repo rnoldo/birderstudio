@@ -64,7 +64,7 @@ extension PhotoRecord {
         self.checksum = domain.checksum
         self.fileSize = domain.fileSize
         self.format = domain.format.rawValue
-        self.capturedAt = domain.captured.timeIntervalSince1970
+        self.capturedAt = domain.captured.timeIntervalSinceReferenceDate
         self.cameraMake = domain.exif.camera.make
         self.cameraModel = domain.exif.camera.model
         self.lensModel = domain.exif.lens
@@ -77,8 +77,8 @@ extension PhotoRecord {
         self.imageWidth = domain.pixelSize.width
         self.imageHeight = domain.pixelSize.height
         self.status = domain.status.rawValue
-        self.importedAt = domain.importedAt.timeIntervalSince1970
-        self.analyzedAt = domain.analyzedAt.map { $0.timeIntervalSince1970 }
+        self.importedAt = domain.importedAt.timeIntervalSinceReferenceDate
+        self.analyzedAt = domain.analyzedAt.map { $0.timeIntervalSinceReferenceDate }
     }
 
     func toDomain() throws -> Photo {
@@ -118,12 +118,12 @@ extension PhotoRecord {
             checksum: checksum,
             fileSize: fileSize,
             format: format,
-            captured: Date(timeIntervalSince1970: capturedAt),
+            captured: Date(timeIntervalSinceReferenceDate: capturedAt),
             exif: exif,
             pixelSize: PixelSize(width: imageWidth, height: imageHeight),
             status: status,
-            importedAt: Date(timeIntervalSince1970: importedAt),
-            analyzedAt: analyzedAt.map { Date(timeIntervalSince1970: $0) }
+            importedAt: Date(timeIntervalSinceReferenceDate: importedAt),
+            analyzedAt: analyzedAt.map { Date(timeIntervalSinceReferenceDate: $0) }
         )
     }
 }

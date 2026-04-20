@@ -8,7 +8,8 @@ let package = Package(
     ],
     products: [
         .library(name: "BirderCore", targets: ["BirderCore"]),
-        .library(name: "BirderUI", targets: ["BirderUI"])
+        .library(name: "BirderUI", targets: ["BirderUI"]),
+        .executable(name: "BirderApp", targets: ["BirderApp"])
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0")
@@ -24,6 +25,11 @@ let package = Package(
         .target(
             name: "BirderUI",
             path: "Sources/BirderUI"
+        ),
+        .executableTarget(
+            name: "BirderApp",
+            dependencies: ["BirderCore", "BirderUI"],
+            path: "Sources/BirderApp"
         ),
         .testTarget(
             name: "BirderCoreTests",

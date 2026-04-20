@@ -77,30 +77,41 @@
 - [x] Import 进度 AsyncStream（`ImportEvent`）
 - [x] 单元测试：真实 23 CR3 样本（benchmark: 0.82s / 36ms per photo）
 
-### 2.2 App Shell + Xcode 工程
-- [ ] Xcode 工程（Bruce 本地创建）或 xcodegen 配置
-- [ ] `@main` SwiftUI App
-- [ ] 主窗口 + NavigationSplitView
-- [ ] Sidebar（Sessions 列表占位）
-- [ ] First-run empty state
+### 2.2 App Shell（SPM executable）
+- [x] SPM `BirderApp` executableTarget（避免依赖 Xcode 工程）
+- [x] `@main` SwiftUI App + WindowGroup
+- [x] `AppEnvironment`（DB / storage / repos / import service / bootstrap）
+- [x] 主窗口 + NavigationSplitView（sidebar / detail）
+- [x] 加载态 / 错误态 / 主壳切换
+- [x] Session Sidebar：`observeAll()` AsyncSequence + 选中绑定
+- [x] Session CRUD UI：创建 / 删除 / 选中
 
-### 2.3 Photo Grid（AppKit NSCollectionView）
-- [ ] `PhotoGridView`（NSViewRepresentable）
-- [ ] NSCollectionViewCompositionalLayout
-- [ ] 缩略图异步加载 + cache actor
-- [ ] 60fps 滚动 profiling
-- [ ] 选中 / 多选
+### 2.3 Drag & Drop Import UI
+- [x] `ImportCoordinator` @MainActor ObservableObject（进度 / 计数 / 错误）
+- [x] `.onDrop(of: [.fileURL])` → 格式过滤 → `ImportService.imports(...)`
+- [x] 空态大号 drop zone + 导入中进度条 + 计数器
+- [x] `PhotoRepository.observeBySession` 驱动实时照片数
 
-### 2.4 详情视图
-- [ ] 大图 + EXIF inspector
-- [ ] 缩放 / 适应窗口
-- [ ] 键盘左右切换
-- [ ] EXIF Inspector panel
+### 2.4 Photo Grid（LazyVGrid）
+- [x] `PhotoGridView` LazyVGrid（adaptive 220–280px）
+- [x] `ThumbnailCache`（MainActor `NSCache<NSString, NSImage>` + 异步 disk read）
+- [x] 缩略图 cell：RAW 标签、capture 时间、ISO/shutter/aperture tags
+- [x] 选中高亮（amber 边框 + 阴影）
+- [x] ScrollViewReader 自动滚动到选中
+- [ ] NSCollectionView 迁移（需要时）+ 60fps profiling
+- [ ] 多选
 
-### 2.5 Stage 2 验收
-- [ ] 能拖 100 张 RAW → 60fps 网格
-- [ ] 点击任一照片看大图
-- [ ] Commit
+### 2.5 详情视图
+- [x] `PhotoPreviewPane`：1200px HEIC 预览 + 右侧 EXIF inspector
+- [x] 键盘左右切换 + Esc 关闭
+- [x] `HSplitView` 可调节大图 + filmstrip grid
+- [x] EXIF 分组：Capture / Exposure / File
+- [ ] 缩放 / 1:1 / fit-to-window
+
+### 2.6 Stage 2 验收
+- [x] 23 CR3 样本导入 benchmark（0.82s / 36ms per photo）
+- [x] `swift build` / `swift run BirderApp` 通过
+- [x] Commit
 
 ---
 
