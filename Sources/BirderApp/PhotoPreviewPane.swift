@@ -7,9 +7,12 @@ import BirderUI
 struct PhotoPreviewPane: View {
     let photo: Photo
     let previewURL: URL
+    let rating: PhotoRating?
+    let analysis: PhotoAnalysis?
     let onClose: () -> Void
     let onPrev: () -> Void
     let onNext: () -> Void
+    let onKey: (Character) -> Bool
 
     @Environment(\.paletteSurface) private var palette
     @State private var image: NSImage?
@@ -24,7 +27,7 @@ struct PhotoPreviewPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider().opacity(0.3)
                 metadataPanel
-                    .frame(width: 240)
+                    .frame(width: 260)
             }
         }
         .background(palette.canvasBackground)
@@ -37,6 +40,10 @@ struct PhotoPreviewPane: View {
         .onKeyPress(.escape) { onClose(); return .handled }
         .onKeyPress(.leftArrow) { onPrev(); return .handled }
         .onKeyPress(.rightArrow) { onNext(); return .handled }
+        .onKeyPress { press in
+            guard let ch = press.characters.first else { return .ignored }
+            return onKey(ch) ? .handled : .ignored
+        }
     }
 
     private var toolbar: some View {
@@ -47,6 +54,8 @@ struct PhotoPreviewPane: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
+            ratingStrip
+            Divider().frame(height: 14).opacity(0.3)
             Button(action: onPrev) {
                 Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
             }
@@ -65,6 +74,59 @@ struct PhotoPreviewPane: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
+    }
+
+    private var ratingStrip: some View {
+        HStack(spacing: Spacing.xs) {
+            decisionChip(systemIcon: "checkmark", label: "P", color: Palette.Semantic.accept,
+                         active: rating?.decision == .accepted, onTap: { _ = onKey("p") })
+                .help("Accept (P)")
+            decisionChip(systemIcon: "xmark", label: "X", color: Palette.Semantic.reject,
+                         active: rating?.decision == .rejected, onTap: { _ = onKey("x") })
+                .help("Reject (X)")
+            decisionChip(systemIcon: "circle.dashed", label: "U", color: palette.textSecondary,
+                         active: rating?.decision == .unrated || rating == nil, onTap: { _ = onKey("u") })
+                .help("Unrate (U)")
+            Divider().frame(height: 14).opacity(0.3)
+            ForEach(1...5, id: \.self) { n in
+                Button {
+                    _ = onKey(Character(String(n)))
+                } label: {
+                    Image(systemName: (rating?.star ?? 0) >= n ? "star.fill" : "star")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(
+                            (rating?.star ?? 0) >= n ? Palette.Accent.amber : palette.textTertiary
+                        )
+                }
+                .buttonStyle(.borderless)
+                .help("Rate \(n) star\(n == 1 ? "" : "s") (\(n))")
+            }
+        }
+    }
+
+    private func decisionChip(
+        systemIcon: String,
+        label: String,
+        color: Color,
+        active: Bool,
+        onTap: @escaping () -> Void
+    ) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 3) {
+                Image(systemName: systemIcon).font(.system(size: 9, weight: .bold))
+                Text(label).font(.system(size: 9, weight: .bold, design: .monospaced))
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(active ? color.opacity(0.25) : Color.clear)
+            )
+            .overlay(
+                Capsule().strokeBorder(active ? color : color.opacity(0.35), lineWidth: active ? 1.2 : 0.8)
+            )
+            .foregroundStyle(active ? color : color.opacity(0.65))
+        }
+        .buttonStyle(.plain)
     }
 
     private var imageArea: some View {
@@ -86,6 +148,17 @@ struct PhotoPreviewPane: View {
     private var metadataPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
+                if let analysis {
+                    section("Quality") {
+                        row("Overall", String(format: "%.2f", analysis.quality.overall))
+                        row("Sharpness", String(format: "%.2f", analysis.quality.sharpness))
+                        row("Exposure", String(format: "%.2f", analysis.quality.exposure))
+                        row("Percentile", String(format: "%.0f%%", analysis.quality.sessionPercentile * 100))
+                        if analysis.isSceneBest {
+                            row("Scene", "Best of scene")
+                        }
+                    }
+                }
                 section("Capture") {
                     row("Date", photo.captured.formatted(date: .long, time: .shortened))
                     if let camera = cameraDisplay {

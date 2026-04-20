@@ -14,7 +14,8 @@ struct RepositoryTests {
             locationName: "Bolsa Chica Ecological Reserve",
             locationCoordinate: Coordinate(latitude: 33.69, longitude: -118.04),
             dateStart: Date(timeIntervalSince1970: 1_712_000_000),
-            dateEnd: Date(timeIntervalSince1970: 1_712_020_000)
+            dateEnd: Date(timeIntervalSince1970: 1_712_020_000),
+            createdAt: Date(timeIntervalSince1970: 1_713_000_000)
         )
     }
 
@@ -33,7 +34,8 @@ struct RepositoryTests {
                 shutter: ShutterSpeed(denominator: 2000),
                 aperture: 5.6
             ),
-            pixelSize: PixelSize(width: 9504, height: 6336)
+            pixelSize: PixelSize(width: 9504, height: 6336),
+            importedAt: Date(timeIntervalSince1970: 1_713_000_000)
         )
     }
 

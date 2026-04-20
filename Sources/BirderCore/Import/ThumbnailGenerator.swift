@@ -28,8 +28,8 @@ public struct ThumbnailOptions: Sendable, Equatable {
         self.forceFullDecode = forceFullDecode
     }
 
-    public static let thumbnail = ThumbnailOptions(maxPixelSize: 256)
-    public static let preview = ThumbnailOptions(maxPixelSize: 1200)
+    public static let thumbnail = ThumbnailOptions(maxPixelSize: 640)
+    public static let preview = ThumbnailOptions(maxPixelSize: 1600)
 }
 
 public struct GeneratedThumbnail: Sendable, Equatable {

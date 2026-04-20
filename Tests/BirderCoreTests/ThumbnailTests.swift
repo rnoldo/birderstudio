@@ -14,9 +14,9 @@ struct ThumbnailTests {
             output: out,
             options: .thumbnail
         )
-        #expect(result.pixelSize.width <= 256)
-        #expect(result.pixelSize.height <= 256)
-        #expect(result.pixelSize.width > 0 && result.pixelSize.height > 0)
+        #expect(result.pixelSize.width <= 640)
+        #expect(result.pixelSize.height <= 640)
+        #expect(result.pixelSize.width > 300)
         #expect(result.bytesWritten > 500)
         #expect(FileManager.default.fileExists(atPath: out.path))
     }
@@ -31,9 +31,9 @@ struct ThumbnailTests {
             output: out,
             options: .preview
         )
-        #expect(result.pixelSize.width <= 1200)
-        #expect(result.pixelSize.height <= 1200)
-        #expect(result.pixelSize.width > 500)
+        #expect(result.pixelSize.width <= 1600)
+        #expect(result.pixelSize.height <= 1600)
+        #expect(result.pixelSize.width > 800)
         #expect(result.bytesWritten > 5000)
     }
 

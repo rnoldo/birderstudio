@@ -8,8 +8,11 @@ final class AppEnvironment: ObservableObject {
     @Published private(set) var storage: StorageLocations?
     @Published private(set) var database: BirderDatabase?
     @Published private(set) var importService: ImportService?
+    @Published private(set) var analysisService: AnalysisService?
     @Published private(set) var sessionRepo: SessionRepository?
     @Published private(set) var photoRepo: PhotoRepository?
+    @Published private(set) var analysisRepo: AnalysisRepository?
+    @Published private(set) var ratingRepo: RatingRepository?
 
     @Published var sessions: [Session] = []
     @Published var selectedSessionID: Session.ID?
@@ -32,14 +35,23 @@ final class AppEnvironment: ObservableObject {
                 storage: locations,
                 bookmarks: bookmarks
             )
+            let analyzer = AnalysisService(
+                pipeline: SimpleAnalysisPipeline(),
+                database: db
+            )
             let sessionRepo = SessionRepository(database: db)
             let photoRepo = PhotoRepository(database: db)
+            let analysisRepo = AnalysisRepository(database: db)
+            let ratingRepo = RatingRepository(database: db)
 
             self.storage = locations
             self.database = db
             self.importService = importer
+            self.analysisService = analyzer
             self.sessionRepo = sessionRepo
             self.photoRepo = photoRepo
+            self.analysisRepo = analysisRepo
+            self.ratingRepo = ratingRepo
 
             startObservingSessions(with: sessionRepo)
         } catch {

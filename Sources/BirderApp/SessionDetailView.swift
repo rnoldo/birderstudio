@@ -9,9 +9,25 @@ struct SessionDetailView: View {
     @EnvironmentObject private var env: AppEnvironment
     @Environment(\.paletteSurface) private var palette
     @StateObject private var importer = ImportCoordinator()
+    @StateObject private var cull = CullCoordinator()
     @State private var isDropTargeted = false
     @State private var photos: [Photo] = []
     @State private var selectedPhotoID: UUID?
+    @State private var filter: CullFilter = .all
+
+    private var filteredPhotos: [Photo] {
+        photos.filter { filter.includes(photo: $0, rating: cull.rating(for: $0.id), analysis: cull.analysis(for: $0.id)) }
+    }
+
+    private var filterCounts: [CullFilter: Int] {
+        var result: [CullFilter: Int] = [:]
+        for f in CullFilter.allCases {
+            result[f] = photos.reduce(0) {
+                $0 + (f.includes(photo: $1, rating: cull.rating(for: $1.id), analysis: cull.analysis(for: $1.id)) ? 1 : 0)
+            }
+        }
+        return result
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,10 +38,32 @@ struct SessionDetailView: View {
         .task(id: session.id) {
             await observePhotos()
         }
+        .task(id: session.id) {
+            await cull.loadSession(session.id, ratingRepo: env.ratingRepo, analysisRepo: env.analysisRepo)
+        }
+        .task(id: importer.isAnalyzing) {
+            // When a batch of analysis completes, reload the ratings/analyses cache.
+            if !importer.isAnalyzing {
+                await cull.loadSession(session.id, ratingRepo: env.ratingRepo, analysisRepo: env.analysisRepo)
+            }
+        }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
             return true
         }
+    }
+
+    fileprivate func handleCullKey(_ character: Character) -> Bool {
+        guard let id = selectedPhotoID, let shortcut = CullShortcut.from(character: character) else {
+            return false
+        }
+        switch shortcut {
+        case .accept: cull.setDecision(photoID: id, decision: .accepted, repo: env.ratingRepo)
+        case .reject: cull.setDecision(photoID: id, decision: .rejected, repo: env.ratingRepo)
+        case .unrate: cull.setDecision(photoID: id, decision: .unrated, repo: env.ratingRepo)
+        case .star(let n): cull.setStar(photoID: id, star: n, repo: env.ratingRepo)
+        }
+        return true
     }
 
     private var header: some View {
@@ -128,6 +166,23 @@ struct SessionDetailView: View {
         .padding(Spacing.xl)
     }
 
+    private var analyzeProgressStrip: some View {
+        HStack(spacing: Spacing.sm) {
+            ProgressView().controlSize(.small)
+            Text("Analyzing \(importer.analyzedCount + importer.analyzeFailedCount) / \(importer.analyzeTotal)")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(palette.textSecondary)
+            ProgressView(value: importer.analyzeProgress)
+                .progressViewStyle(.linear)
+                .tint(Palette.Accent.amber)
+                .frame(maxWidth: 220)
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.xs)
+        .background(palette.surfaceRaised.opacity(0.3))
+    }
+
     private func counter(_ label: String, _ value: Int, _ color: Color) -> some View {
         VStack(spacing: 2) {
             Text("\(value)")
@@ -144,29 +199,44 @@ struct SessionDetailView: View {
     @ViewBuilder
     private var populatedBody: some View {
         if let storage = env.storage {
-            Group {
+            VStack(spacing: 0) {
+                if importer.isAnalyzing {
+                    analyzeProgressStrip
+                    Divider().opacity(0.3)
+                }
+                CullFilterBar(selected: $filter, counts: filterCounts)
+                Divider().opacity(0.3)
                 if let selected = selectedPhoto {
                     HSplitView {
                         PhotoPreviewPane(
                             photo: selected,
                             previewURL: storage.previewURL(for: selected.id),
+                            rating: cull.rating(for: selected.id),
+                            analysis: cull.analysis(for: selected.id),
                             onClose: { selectedPhotoID = nil },
                             onPrev: { navigatePhoto(offset: -1) },
-                            onNext: { navigatePhoto(offset: +1) }
+                            onNext: { navigatePhoto(offset: +1) },
+                            onKey: handleCullKey
                         )
                         .frame(minWidth: 480)
                         PhotoGridView(
-                            photos: photos,
+                            photos: filteredPhotos,
                             storage: storage,
-                            selectedPhotoID: $selectedPhotoID
+                            selectedPhotoID: $selectedPhotoID,
+                            rating: { cull.rating(for: $0) },
+                            analysis: { cull.analysis(for: $0) },
+                            onKey: handleCullKey
                         )
                         .frame(minWidth: 280, idealWidth: 360, maxWidth: 560)
                     }
                 } else {
                     PhotoGridView(
-                        photos: photos,
+                        photos: filteredPhotos,
                         storage: storage,
-                        selectedPhotoID: $selectedPhotoID
+                        selectedPhotoID: $selectedPhotoID,
+                        rating: { cull.rating(for: $0) },
+                        analysis: { cull.analysis(for: $0) },
+                        onKey: handleCullKey
                     )
                 }
             }
@@ -202,7 +272,12 @@ struct SessionDetailView: View {
             let urls = await Self.loadURLs(from: providers)
             let supported = urls.filter { FileFormat.from(pathExtension: $0.pathExtension) != nil }
             guard !supported.isEmpty, let service = env.importService else { return }
-            await importer.run(urls: supported, sessionID: session.id, service: service)
+            await importer.run(
+                urls: supported,
+                sessionID: session.id,
+                importer: service,
+                analyzer: env.analysisService
+            )
         }
     }
 
