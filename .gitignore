@@ -12,7 +12,8 @@ xcuserdata/
 .swiftpm/
 Packages/
 Package.pins
-Package.resolved
+# Package.resolved is intentionally tracked — this is an executable app,
+# not a library; locking dependency versions ensures reproducible builds.
 
 # Stray compile artifacts if they leak into root
 /*.d
@@ -32,10 +33,23 @@ Icon
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Environment / secrets
+.env
+.env.local
 
 # Logs and crash reports
 *.log
 crash.log
+
+# User library data (generated at runtime, never source)
+Library/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # Test artifacts
 *.xctestrun

@@ -12,6 +12,11 @@ struct RootView: View {
             content
         }
         .foregroundStyle(palette.textPrimary)
+        .background(
+            WindowAccessor { window in
+                WindowDropHandler.shared.install(in: window)
+            }
+        )
     }
 
     @ViewBuilder private var content: some View {

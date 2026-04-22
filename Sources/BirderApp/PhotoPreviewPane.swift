@@ -9,10 +9,14 @@ struct PhotoPreviewPane: View {
     let previewURL: URL
     let rating: PhotoRating?
     let analysis: PhotoAnalysis?
+    let detections: [BirdDetection]
     let onClose: () -> Void
     let onPrev: () -> Void
     let onNext: () -> Void
+    let onPrevScene: () -> Void
+    let onNextScene: () -> Void
     let onKey: (Character) -> Bool
+    let onOpenSearch: () -> Void
 
     @Environment(\.paletteSurface) private var palette
     @State private var image: NSImage?
@@ -40,7 +44,13 @@ struct PhotoPreviewPane: View {
         .onKeyPress(.escape) { onClose(); return .handled }
         .onKeyPress(.leftArrow) { onPrev(); return .handled }
         .onKeyPress(.rightArrow) { onNext(); return .handled }
+        .onKeyPress(.upArrow) { onPrevScene(); return .handled }
+        .onKeyPress(.downArrow) { onNextScene(); return .handled }
         .onKeyPress { press in
+            if press.modifiers.contains(.command), press.key == KeyEquivalent("k") {
+                onOpenSearch()
+                return .handled
+            }
             guard let ch = press.characters.first else { return .ignored }
             return onKey(ch) ? .handled : .ignored
         }
@@ -87,19 +97,20 @@ struct PhotoPreviewPane: View {
             decisionChip(systemIcon: "circle.dashed", label: "U", color: palette.textSecondary,
                          active: rating?.decision == .unrated || rating == nil, onTap: { _ = onKey("u") })
                 .help("Unrate (U)")
-            Divider().frame(height: 14).opacity(0.3)
+            if let stars = analysis.map(AIStar.stars(for:)) {
+                Divider().frame(height: 14).opacity(0.3)
+                aiStars(stars)
+                    .help("AI ranking within session")
+            }
+        }
+    }
+
+    private func aiStars(_ count: Int) -> some View {
+        HStack(spacing: 1) {
             ForEach(1...5, id: \.self) { n in
-                Button {
-                    _ = onKey(Character(String(n)))
-                } label: {
-                    Image(systemName: (rating?.star ?? 0) >= n ? "star.fill" : "star")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(
-                            (rating?.star ?? 0) >= n ? Palette.Accent.amber : palette.textTertiary
-                        )
-                }
-                .buttonStyle(.borderless)
-                .help("Rate \(n) star\(n == 1 ? "" : "s") (\(n))")
+                Image(systemName: n <= count ? "star.fill" : "star")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(n <= count ? Palette.Accent.amber : palette.textTertiary)
             }
         }
     }
@@ -129,21 +140,55 @@ struct PhotoPreviewPane: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Image area with bbox overlay
+
     private var imageArea: some View {
-        ZStack {
-            Color.black.opacity(0.95)
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(Spacing.md)
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .opacity(0.6)
+        GeometryReader { geo in
+            ZStack {
+                Color.black.opacity(0.95)
+                if let nsImg = image {
+                    let pad = Spacing.md
+                    let natW = nsImg.size.width
+                    let natH = nsImg.size.height
+                    let availW = geo.size.width - 2 * pad
+                    let availH = geo.size.height - 2 * pad
+                    let scale: CGFloat = (natW > 0 && natH > 0)
+                        ? min(availW / natW, availH / natH)
+                        : 1
+                    let dispW = natW * scale
+                    let dispH = natH * scale
+                    let originX = pad + (availW - dispW) / 2
+                    let originY = pad + (availH - dispH) / 2
+
+                    Image(nsImage: nsImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .padding(pad)
+
+                    // Bbox overlays — NormalizedRect uses top-left origin, y-down.
+                    // When the bbox ML pipeline is added, Vision coords (bottom-left
+                    // origin) must be flipped before persisting: y_tl = 1 - y_bl - height.
+                    ForEach(detections) { det in
+                        let b = det.bbox
+                        let bx = originX + CGFloat(b.x) * dispW
+                        let by = originY + CGFloat(b.y) * dispH
+                        let bw = CGFloat(b.width)  * dispW
+                        let bh = CGFloat(b.height) * dispH
+                        BboxOverlay(detection: det)
+                            .frame(width: max(bw, 2), height: max(bh, 2))
+                            .position(x: bx + bw / 2, y: by + bh / 2)
+                    }
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .opacity(0.6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
     }
+
+    // MARK: - Metadata panel
 
     private var metadataPanel: some View {
         ScrollView {
@@ -156,6 +201,16 @@ struct PhotoPreviewPane: View {
                         row("Percentile", String(format: "%.0f%%", analysis.quality.sessionPercentile * 100))
                         if analysis.isSceneBest {
                             row("Scene", "Best of scene")
+                        }
+                    }
+                }
+                if !detections.isEmpty {
+                    section("Detections") {
+                        ForEach(Array(detections.enumerated()), id: \.element.id) { idx, det in
+                            row("Bird \(idx + 1)", String(format: "%.0f%%", det.confidence * 100))
+                            if let sp = det.speciesID {
+                                row("Species", sp)
+                            }
                         }
                     }
                 }
@@ -233,5 +288,35 @@ struct PhotoPreviewPane: View {
                 .truncationMode(.middle)
             Spacer(minLength: 0)
         }
+    }
+}
+
+// MARK: - Single bbox overlay view
+
+private struct BboxOverlay: View {
+    let detection: BirdDetection
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .strokeBorder(Palette.Accent.amber.opacity(0.9), lineWidth: 1.5)
+                .background(Rectangle().fill(Palette.Accent.amber.opacity(0.06)))
+
+            if let label {
+                Text(label)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Palette.Accent.amber)
+                    .offset(y: -18)
+            }
+        }
+    }
+
+    private var label: String? {
+        let conf = String(format: "%.0f%%", detection.confidence * 100)
+        if let sp = detection.speciesID { return "\(sp) \(conf)" }
+        return conf
     }
 }

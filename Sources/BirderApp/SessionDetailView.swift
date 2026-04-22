@@ -8,12 +8,15 @@ struct SessionDetailView: View {
     let session: Session
     @EnvironmentObject private var env: AppEnvironment
     @Environment(\.paletteSurface) private var palette
+    @Environment(\.undoManager) private var undoManager
     @StateObject private var importer = ImportCoordinator()
     @StateObject private var cull = CullCoordinator()
     @State private var isDropTargeted = false
     @State private var photos: [Photo] = []
     @State private var selectedPhotoID: UUID?
     @State private var filter: CullFilter = .all
+    @State private var selectedPhotoDetections: [BirdDetection] = []
+    @State private var showSearch = false
 
     private var filteredPhotos: [Photo] {
         photos.filter { filter.includes(photo: $0, rating: cull.rating(for: $0.id), analysis: cull.analysis(for: $0.id)) }
@@ -29,11 +32,43 @@ struct SessionDetailView: View {
         return result
     }
 
+    // MARK: - Session stats
+
+    private var acceptedCount: Int {
+        photos.filter { cull.rating(for: $0.id)?.decision == .accepted }.count
+    }
+    private var rejectedCount: Int {
+        photos.filter { cull.rating(for: $0.id)?.decision == .rejected }.count
+    }
+    private var analyzedCount: Int {
+        photos.filter { cull.analysis(for: $0.id) != nil }.count
+    }
+    private var sceneCount: Int {
+        Set(photos.compactMap { cull.analysis(for: $0.id)?.sceneID }).count
+    }
+    private var avgQuality: Double? {
+        let scores = photos.compactMap { cull.analysis(for: $0.id)?.quality.overall }
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / Double(scores.count)
+    }
+
+    // MARK: - Body
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)
             contentArea
+        }
+        .task(id: session.id) {
+            let handler = WindowDropHandler.shared
+            handler.onDrop = { urls in
+                handleDropURLs(urls)
+                return true
+            }
+            handler.onTargeted = { targeted in
+                isDropTargeted = targeted
+            }
         }
         .task(id: session.id) {
             await observePhotos()
@@ -42,29 +77,65 @@ struct SessionDetailView: View {
             await cull.loadSession(session.id, ratingRepo: env.ratingRepo, analysisRepo: env.analysisRepo)
         }
         .task(id: importer.isAnalyzing) {
-            // When a batch of analysis completes, reload the ratings/analyses cache.
             if !importer.isAnalyzing {
                 await cull.loadSession(session.id, ratingRepo: env.ratingRepo, analysisRepo: env.analysisRepo)
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-            handleDrop(providers: providers)
-            return true
+        .task(id: selectedPhotoID) {
+            guard let id = selectedPhotoID, let repo = env.detectionRepo else {
+                selectedPhotoDetections = []
+                return
+            }
+            selectedPhotoDetections = (try? await repo.fetchByPhoto(id)) ?? []
+        }
+        .overlay {
+            if showSearch {
+                SearchPanel(
+                    isPresented: $showSearch,
+                    sessions: env.sessions,
+                    photos: photos,
+                    onSelectSession: { env.selectedSessionID = $0 },
+                    onSelectPhoto: { selectedPhotoID = $0 }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: showSearch)
+        // Hidden button so Cmd+K works even when focus is on the VStack
+        .background {
+            Button("") { showSearch = true }
+                .keyboardShortcut("k", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
         }
     }
+
+    // MARK: - Cull key handler
 
     fileprivate func handleCullKey(_ character: Character) -> Bool {
         guard let id = selectedPhotoID, let shortcut = CullShortcut.from(character: character) else {
             return false
         }
+        let previous = cull.rating(for: id)?.decision ?? .unrated
+        let next: RatingDecision
         switch shortcut {
-        case .accept: cull.setDecision(photoID: id, decision: .accepted, repo: env.ratingRepo)
-        case .reject: cull.setDecision(photoID: id, decision: .rejected, repo: env.ratingRepo)
-        case .unrate: cull.setDecision(photoID: id, decision: .unrated, repo: env.ratingRepo)
-        case .star(let n): cull.setStar(photoID: id, star: n, repo: env.ratingRepo)
+        case .accept: next = .accepted
+        case .reject: next = .rejected
+        case .unrate: next = .unrated
         }
+        guard next != previous else { return true }
+        cull.setDecision(photoID: id, decision: next, repo: env.ratingRepo)
+        let repo = env.ratingRepo
+        undoManager?.registerUndo(withTarget: cull) { coordinator in
+            MainActor.assumeIsolated {
+                coordinator.setDecision(photoID: id, decision: previous, repo: repo)
+            }
+        }
+        undoManager?.setActionName("Rate Photo")
         return true
     }
+
+    // MARK: - Header
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
@@ -104,6 +175,8 @@ struct SessionDetailView: View {
         }
     }
 
+    // MARK: - Empty drop zone
+
     private var largeDropZone: some View {
         ZStack {
             RoundedRectangle(cornerRadius: CornerRadius.lg)
@@ -131,6 +204,8 @@ struct SessionDetailView: View {
         }
         .padding(Spacing.xl)
     }
+
+    // MARK: - Import progress
 
     private var importProgress: some View {
         VStack(spacing: Spacing.lg) {
@@ -196,6 +271,8 @@ struct SessionDetailView: View {
         }
     }
 
+    // MARK: - Populated body
+
     @ViewBuilder
     private var populatedBody: some View {
         if let storage = env.storage {
@@ -206,6 +283,15 @@ struct SessionDetailView: View {
                 }
                 CullFilterBar(selected: $filter, counts: filterCounts)
                 Divider().opacity(0.3)
+                SessionStatsBar(
+                    total: photos.count,
+                    accepted: acceptedCount,
+                    rejected: rejectedCount,
+                    scenes: sceneCount,
+                    analyzed: analyzedCount,
+                    avgQuality: avgQuality
+                )
+                Divider().opacity(0.3)
                 if let selected = selectedPhoto {
                     HSplitView {
                         PhotoPreviewPane(
@@ -213,10 +299,14 @@ struct SessionDetailView: View {
                             previewURL: storage.previewURL(for: selected.id),
                             rating: cull.rating(for: selected.id),
                             analysis: cull.analysis(for: selected.id),
+                            detections: selectedPhotoDetections,
                             onClose: { selectedPhotoID = nil },
                             onPrev: { navigatePhoto(offset: -1) },
                             onNext: { navigatePhoto(offset: +1) },
-                            onKey: handleCullKey
+                            onPrevScene: { navigateScene(offset: -1) },
+                            onNextScene: { navigateScene(offset: +1) },
+                            onKey: handleCullKey,
+                            onOpenSearch: { showSearch = true }
                         )
                         .frame(minWidth: 480)
                         PhotoGridView(
@@ -259,43 +349,49 @@ struct SessionDetailView: View {
         return photos.first { $0.id == id }
     }
 
-    private func navigatePhoto(offset: Int) {
-        guard let id = selectedPhotoID,
-              let idx = photos.firstIndex(where: { $0.id == id }) else { return }
-        let newIdx = min(max(idx + offset, 0), photos.count - 1)
-        guard newIdx != idx else { return }
-        selectedPhotoID = photos[newIdx].id
+    private var sceneGroups: [SceneGroup] {
+        SceneGroup.build(photos: filteredPhotos) { cull.analysis(for: $0) }
     }
 
-    private func handleDrop(providers: [NSItemProvider]) {
+    private func navigatePhoto(offset: Int) {
+        let order = sceneGroups.flatMap { $0.photos.map(\.id) }
+        guard !order.isEmpty else { return }
+        guard let id = selectedPhotoID,
+              let idx = order.firstIndex(of: id) else {
+            selectedPhotoID = order.first
+            return
+        }
+        let newIdx = min(max(idx + offset, 0), order.count - 1)
+        guard newIdx != idx else { return }
+        selectedPhotoID = order[newIdx]
+    }
+
+    private func navigateScene(offset: Int) {
+        let groups = sceneGroups
+        guard !groups.isEmpty else { return }
+        let currentIdx: Int
+        if let id = selectedPhotoID,
+           let gi = groups.firstIndex(where: { $0.photos.contains(where: { $0.id == id }) }) {
+            currentIdx = gi
+        } else {
+            currentIdx = 0
+        }
+        let newIdx = min(max(currentIdx + offset, 0), groups.count - 1)
+        if let best = groups[newIdx].photos.first?.id {
+            selectedPhotoID = best
+        }
+    }
+
+    private func handleDropURLs(_ urls: [URL]) {
+        let supported = urls.filter { FileFormat.from(pathExtension: $0.pathExtension) != nil }
+        guard !supported.isEmpty, let service = env.importService else { return }
         Task { @MainActor in
-            let urls = await Self.loadURLs(from: providers)
-            let supported = urls.filter { FileFormat.from(pathExtension: $0.pathExtension) != nil }
-            guard !supported.isEmpty, let service = env.importService else { return }
             await importer.run(
                 urls: supported,
                 sessionID: session.id,
                 importer: service,
                 analyzer: env.analysisService
             )
-        }
-    }
-
-    private static func loadURLs(from providers: [NSItemProvider]) async -> [URL] {
-        var urls: [URL] = []
-        for provider in providers {
-            if let url = await loadURL(from: provider) {
-                urls.append(url)
-            }
-        }
-        return urls
-    }
-
-    private static func loadURL(from provider: NSItemProvider) async -> URL? {
-        await withCheckedContinuation { continuation in
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                continuation.resume(returning: url)
-            }
         }
     }
 

@@ -79,7 +79,7 @@ public final class ImportService: Sendable {
         }
 
         do {
-            if let existing = try await photoRepo.findByChecksum(checksum) {
+            if let existing = try await photoRepo.findByChecksum(checksum, sessionID: sessionID) {
                 return .duplicate(url: url, existingPhotoID: existing.id)
             }
         } catch {

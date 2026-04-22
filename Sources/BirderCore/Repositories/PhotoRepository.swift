@@ -41,10 +41,11 @@ public struct PhotoRepository: Sendable {
         }
     }
 
-    public func findByChecksum(_ checksum: String) async throws -> Photo? {
+    public func findByChecksum(_ checksum: String, sessionID: UUID) async throws -> Photo? {
         try await db.read { db in
             try PhotoRecord
                 .filter(Column("checksum") == checksum)
+                .filter(Column("session_id") == sessionID.uuidString)
                 .fetchOne(db)?
                 .toDomain()
         }

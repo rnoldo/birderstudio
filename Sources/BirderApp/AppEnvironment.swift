@@ -13,6 +13,7 @@ final class AppEnvironment: ObservableObject {
     @Published private(set) var photoRepo: PhotoRepository?
     @Published private(set) var analysisRepo: AnalysisRepository?
     @Published private(set) var ratingRepo: RatingRepository?
+    @Published private(set) var detectionRepo: BirdDetectionRepository?
 
     @Published var sessions: [Session] = []
     @Published var selectedSessionID: Session.ID?
@@ -52,6 +53,7 @@ final class AppEnvironment: ObservableObject {
             self.photoRepo = photoRepo
             self.analysisRepo = analysisRepo
             self.ratingRepo = ratingRepo
+            self.detectionRepo = BirdDetectionRepository(database: db)
 
             startObservingSessions(with: sessionRepo)
         } catch {
